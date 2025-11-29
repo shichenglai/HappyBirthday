@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>生日快乐 - 魔法粒子 v6.3 (完整功能修复版)</title>
+    <title>生日快乐 - 魔法粒子 v6.4 (视觉增强版)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js -->
@@ -125,6 +125,21 @@
         }
         /* 隐藏日志 */
         #debug-console { display: none; }
+
+        /* 增强的摄像头预览框样式 */
+        #cam-preview-container {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #cam-preview-container:hover {
+            transform: scale(1.05);
+            opacity: 1;
+        }
+        /* 霓虹呼吸效果 */
+        @keyframes neon-pulse {
+            0%, 100% { text-shadow: 0 0 10px rgba(255,105,180,0.7), 0 0 20px rgba(255,105,180,0.5); }
+            50% { text-shadow: 0 0 20px rgba(255,105,180,0.9), 0 0 30px rgba(255,105,180,0.7), 0 0 40px rgba(255,105,180,0.5); }
+        }
+        .neon-pulse { animation: neon-pulse 2s infinite; }
     </style>
 </head>
 <body>
@@ -137,7 +152,7 @@
     </div>
 
     <audio id="bgm" loop>
-        <source src="../src/happy-birthday-155461.mp3" type="audio/mpeg">
+        <source src="./src/happy-birthday-155461.mp3" type="audio/mpeg">
     </audio>
 
     <video class="input_video" playsinline></video>
@@ -191,13 +206,25 @@
         <div id="center-instruction" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none w-full z-0">
             <div class="flex items-center justify-center gap-4 mb-2">
                 <span id="hand-icon" class="text-6xl animate-bounce">👋</span>
-                <h2 id="instruction-text" class="text-6xl md:text-8xl font-bold text-white neon-text transition-all duration-700">举起双手</h2>
+                <h2 id="instruction-text" class="text-6xl md:text-8xl font-bold text-white neon-pulse transition-all duration-700">举起双手</h2>
             </div>
             <p id="sub-instruction" class="mt-4 text-xl md:text-2xl text-pink-200/80 font-light tracking-[0.3em]">让魔法发生</p>
         </div>
-        <div class="absolute bottom-4 left-4 hidden md:block opacity-30 hover:opacity-100 transition duration-500">
-            <div class="w-24 h-16 glass-panel overflow-hidden">
-                 <canvas id="output_canvas" width="160" height="120" class="w-full h-full object-cover transform scale-x-[-1]"></canvas>
+
+        <!-- 增强的左下角摄像头预览框 -->
+        <div id="cam-preview-container" class="absolute bottom-6 left-6 z-50 opacity-90 hover:opacity-100">
+            <div class="glass-panel p-2 rounded-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+                <div class="relative w-36 h-28 bg-black/40 rounded-lg overflow-hidden border border-white/5">
+                     <canvas id="output_canvas" width="160" height="120" class="w-full h-full object-cover transform scale-x-[-1]"></canvas>
+                     <!-- 状态指示灯 -->
+                     <div class="absolute top-2 right-2 flex items-center gap-1 bg-black/60 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+                        <div id="cam-status-dot" class="w-1.5 h-1.5 rounded-full bg-red-500 transition-colors duration-300"></div>
+                        <span id="cam-status-text" class="text-[8px] text-red-400 font-mono">NO HAND</span>
+                     </div>
+                </div>
+                <div class="text-center mt-1.5">
+                    <p class="text-[10px] text-pink-200/70 tracking-widest uppercase scale-90">Camera View</p>
+                </div>
             </div>
         </div>
     </div>
@@ -212,7 +239,7 @@
                 <div class="flip-card-front glass-panel bg-gradient-to-br from-pink-500/40 to-purple-600/40 border border-white/30 p-1">
                     <div class="bg-black/80 rounded-[1rem] p-6 h-full flex flex-col backdrop-blur-md">
                         <div class="w-full aspect-[4/3] bg-gray-800 rounded-lg mb-6 overflow-hidden relative border border-white/10 shadow-inner">
-                            <img src="../src/1.jpg" class="w-full h-full object-cover" alt="Gift">
+                            <img src="./src/1.jpg" class="w-full h-full object-cover" alt="Gift">
                             <div class="absolute bottom-3 left-4 text-white/90 font-handwriting text-2xl">Happy Birthday!</div>
                         </div>
                         <div class="text-center mt-auto mb-8">
@@ -300,7 +327,10 @@
             settingsToggle: document.getElementById('settings-toggle'),
             topBanner: document.getElementById('top-banner'),
             startBtn: document.getElementById('start-btn'),
-            loadingText: document.getElementById('loading-text')
+            loadingText: document.getElementById('loading-text'),
+            // 新增摄像头状态指示
+            camStatusDot: document.getElementById('cam-status-dot'),
+            camStatusText: document.getElementById('cam-status-text')
         };
 
         // 立即初始化 Three.js 以显示启动背景
@@ -503,7 +533,6 @@
             });
         }
 
-        // --- 核心逻辑修复：粒子更新 ---
         function updateParticles() {
             const positions = particleSystem.geometry.attributes.position.array;
             const colors = particleSystem.geometry.attributes.color.array;
@@ -521,14 +550,12 @@
                     else if (p.layer === 'cream') p.targetColor.set(CAKE_THEME.cream);
                 }
 
-                // 1. INTRO 状态 (启动页波浪背景 - 保留效果)
+                // 1. INTRO 状态 (启动页波浪背景)
                 if (currentState === STATE.INTRO) {
                     const angle = p.angle + time * 0.05;
                     const r = p.radius + Math.sin(time + i * 0.01) * 10;
                     target.x = Math.cos(angle) * r * 3;
                     target.z = Math.sin(angle) * r * 3;
-                    
-                    // 修复：使用 target.x 生成波浪，解决 x is not defined 报错
                     target.y = p.baseTarget.y + Math.sin(time * 0.5 + target.x * 0.05) * 20; 
                     
                     const hue = 0.8 + (Math.sin(time * 0.1 + target.x * 0.01) * 0.1); 
@@ -544,20 +571,15 @@
                     const hue = 0.9 + (Math.sin(time + i * 0.01) * 0.05); 
                     p.targetColor.setHSL(hue, 0.8, 0.6);
                 } 
-                // 3. 待机波浪状态 (仅 IDLE 状态显示波浪，吹气时保持蛋糕形状)
-                // 修复关键：移除了 STATE.BLOWING 和 interactionMode，防止蛋糕被波浪覆盖
+                // 3. 待机波浪状态 (仅 IDLE 状态显示波浪)
                 else if (currentState === STATE.IDLE) {
                     const angle = p.angle + time * 0.1;
                     const r = p.radius + Math.sin(time + i * 0.01)*2;
                     target.x = Math.cos(angle) * r;
                     target.z = Math.sin(angle) * r;
-                    
-                    // 修复：使用 target.x 生成波浪
                     target.y = p.baseTarget.y + Math.sin(time + target.x * 0.05) * 5; 
-                    
                     p.targetColor.set(0x333333); 
                 }
-                // 其他状态 (CAKE, BLOWING, INTERACTIVE) 将直接使用 transitionTo 设置的坐标 (target)
 
                 if (p.type === 'flame') {
                     const noise = Math.sin(time * 6 + p.noiseOffset) * 0.6;
@@ -740,32 +762,26 @@
             ui.surpriseLayer.classList.remove('active');
             ui.surpriseLayer.classList.add('hidden');    
             ui.floatingGiftBtn.classList.remove('hidden');
-            
-            // 修复关键：收起卡片后，变回蛋糕形状供用户旋转
             interactionMode = 1; 
             transitionTo('cake'); 
-            
             ui.statusText.innerText = "INTERACTIVE MODE: DRAG TO ROTATE";
             ui.typewriter.innerHTML = ""; 
             ui.topBanner.classList.remove('hidden');
         });
 
-        // 按钮点击事件处理 (调试核心)
+        // 按钮点击事件处理
         ui.startBtn.addEventListener('click', async function() {
             log('点击了进入按钮...');
             const btn = this;
             
-            // 资源检测
             if (typeof Hands === 'undefined') {
-                log('警告: MediaPipe (Hands) 库尚未加载完成。尝试继续，但手势可能无法工作。');
-                // 不再直接 return，允许用户进入（即使没有摄像头）
+                log('警告: MediaPipe 库加载延迟。');
             }
 
             btn.innerHTML = '<span class="animate-pulse">Loading...</span>';
             btn.disabled = true;
             ui.loadingText.style.display = 'block';
             
-            // 1. 尝试播放音频
             try {
                 fadeAudioIn();
                 await initAudio();
@@ -775,7 +791,6 @@
                 ui.statusText.innerText = "AUDIO/MIC LIMITED";
             }
 
-            // 2. 尝试初始化摄像头
             try {
                 log('尝试启动摄像头...');
                 await initCamera();
@@ -783,10 +798,8 @@
             } catch (e) {
                 log('摄像头/MediaPipe 失败: ' + e);
                 ui.statusText.innerText = "CAMERA FAILED - USE SPACEBAR";
-                // 即使失败，也继续进入
             }
             
-            // 3. 进入主界面
             log('进入主界面...');
             currentState = STATE.IDLE;
             ui.startOverlay.classList.add('hidden');
@@ -803,7 +816,7 @@
                 source.connect(analyser);
                 checkAudio();
             } catch (e) {
-                log('麦克风权限被拒绝或不支持');
+                log('麦克风权限被拒绝');
                 ui.statusText.innerText = "MIC DENIED - USE TOUCH/SPACE";
                 throw e;
             }
@@ -843,7 +856,6 @@
         }
 
         function fadeAudioIn() {
-            // 使用 Base64，不再依赖网络链接
             const playPromise = bgm.play();
             if (playPromise !== undefined) {
                 playPromise.then(_ => {
@@ -869,7 +881,6 @@
         async function initCamera() {
             const video = document.getElementsByClassName('input_video')[0];
             
-            // 再次检查
             if (typeof Hands === 'undefined' || typeof Camera === 'undefined') {
                 throw new Error("MediaPipe 库未加载");
             }
@@ -878,23 +889,34 @@
             
             hands.setOptions({ 
                 maxNumHands: 1, 
-                modelComplexity: 0, // 轻量级
+                modelComplexity: 0, 
                 minDetectionConfidence: 0.5, 
                 minTrackingConfidence: 0.5 
             });
             
             hands.onResults((results) => {
-                if (currentState === STATE.IDLE && results.multiHandLandmarks.length > 0) {
-                    startSequence();
-                }
-                if (interactionMode === 1 && results.multiHandLandmarks.length > 0) {
-                    const currentHandX = results.multiHandLandmarks[0][9].x; 
-                    const delta = currentHandX - lastHandX;
-                    if (Math.abs(delta) > 0.002) {
-                        rotationVelocity += delta * -0.2; 
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    ui.camStatusDot.className = "w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_8px_#4ade80]";
+                    ui.camStatusText.innerText = "DETECTED";
+                    ui.camStatusText.className = "text-[8px] text-green-400 font-mono font-bold";
+                    
+                    if (currentState === STATE.IDLE) {
+                        startSequence();
                     }
-                    lastHandX = currentHandX;
+                    if (interactionMode === 1) {
+                        const currentHandX = results.multiHandLandmarks[0][9].x; 
+                        const delta = currentHandX - lastHandX;
+                        if (Math.abs(delta) > 0.002) {
+                            rotationVelocity += delta * -0.2; 
+                        }
+                        lastHandX = currentHandX;
+                    }
+                } else {
+                    ui.camStatusDot.className = "w-1.5 h-1.5 rounded-full bg-red-500";
+                    ui.camStatusText.innerText = "NO HAND";
+                    ui.camStatusText.className = "text-[8px] text-red-400 font-mono";
                 }
+
                 const ctx = document.getElementById('output_canvas').getContext('2d');
                 ctx.clearRect(0, 0, 160, 120);
                 if(results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
